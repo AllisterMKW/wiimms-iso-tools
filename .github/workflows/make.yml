@@ -13,8 +13,6 @@ jobs:
       - name: Install Build Dependencies
         run: |
           brew install openssl xz bzip2 ldid
-
-
       - name: Pre-Compile Objects
         run: |
           cd project
