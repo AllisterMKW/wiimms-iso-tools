@@ -1,20 +1,54 @@
-name: make mac distrib
-
-on:
-  push:
-    branches: [ master, test-mac-build ]
+name: Compile WIT for iOS Rootless
+on: [workflow_dispatch] # Allows you to trigger the build manually via a button
 
 jobs:
   build:
-
-    runs-on: macos-latest
-
+    runs-on: macos-latest # Uses a Mac runner to natively cross-compile for iOS/Darwin
     steps:
-      - uses: actions/checkout@v2
-      - run: SYSTEM=mac make -C project flags distrib
-      - name: Upload distribution
-        uses: actions/upload-artifact@v2
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
         with:
-          name: latest-wit@mac-distribution
-          path: project/latest-mac.tar.gz
+          repository: 'Wiimm/wiimms-iso-tools'
 
+      - name: Install Build Dependencies
+        run: |
+          brew install openssl lzma bzip2 ldid
+
+      - name: Pre-Compile Objects
+        run: |
+          cd project
+          # Create missing header files manually
+          echo '#define REAL_VERSION "3.02a"' > version.h
+          echo '#define REVISION "0"' >> version.h
+          echo '#define REVISION_STR "0"' >> version.h
+          
+          # Compile source code files to objects
+          for f in ./src/*.c ./src/libwbfs/*.c ./dclib/*.c; do
+            if [[ "$f" != *"wwt.c"* && "$f" != *"wtest.c"* && "$f" != *"wwt+wit-cmd.c"* ]]; then
+              clang -O2 -arch arm64 -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
+                -miphoneos-version-min=15.0 -D_FILE_OFFSET_BITS=64 \
+                -I. -I./src -I./src/libwbfs -I./dclib \
+                -I$(brew --prefix openssl)/include \
+                -c "$f" -o "${f%.c}.o"
+            fi
+          done
+
+      - name: Link Native iOS Binary
+        run: |
+          cd project
+          clang -O2 -arch arm64 -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
+            -miphoneos-version-min=15.0 -D_FILE_OFFSET_BITS=64 \
+            ./src/*.o ./src/libwbfs/*.o ./dclib/*.o \
+            -L$(brew --prefix openssl)/lib -lz -lcrypto -llzma -lbz2 \
+            -o wit
+
+      - name: Pseudo-Sign Binary for Jailbreak
+        run: |
+          cd project
+          ldid -S wit
+
+      - name: Upload Finished Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wit-ios-arm64
+          path: project/wit
