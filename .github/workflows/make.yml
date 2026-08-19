@@ -1,9 +1,9 @@
-name: Compile WIT for iOS Rootless
-on: [workflow_dispatch] # Allows you to trigger the build manually via a button
+name: Compile Wiimms ISO Tools for iOS Rootless
+on: [workflow_dispatch]
 
 jobs:
   build:
-    runs-on: macos-latest # Uses a Mac runner to natively cross-compile for iOS/Darwin
+    runs-on: macos-latest
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
@@ -13,17 +13,20 @@ jobs:
       - name: Install Build Dependencies
         run: |
           brew install openssl xz bzip2 ldid
-      - name: Pre-Compile Objects
+
+      - name: Setup Version Headers
         run: |
           cd project
-          # Create missing version headers manually
           echo '#define REAL_VERSION "3.02a"' > version.h
           echo '#define REVISION "0"' >> version.h
           echo '#define REVISION_STR "0"' >> version.h
-          
-          # Compile files individually with the iOS workaround flag
+
+      - name: Pre-Compile Shared Object Files
+        run: |
+          cd project
+          # Compile common modules individually with POSIX workaround flags (-D__OpenBSD__)
           for f in ./src/*.c ./src/libwbfs/*.c ./dclib/*.c; do
-            if [[ "$f" != *"wwt.c"* && "$f" != *"wtest.c"* && "$f" != *"wwt+wit-cmd.c"* ]]; then
+            if [[ "$f" != *"wwt.c"* && "$f" != *"wit.c"* && "$f" != *"wtest.c"* && "$f" != *"wwt+wit-cmd.c"* ]]; then
               clang -O2 -arch arm64 -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
                 -miphoneos-version-min=15.0 -D_FILE_OFFSET_BITS=64 -D__OpenBSD__ \
                 -I. -I./src -I./src/libwbfs -I./dclib \
@@ -32,22 +35,50 @@ jobs:
             fi
           done
 
-        - name: Link Native iOS Binary
+      - name: Build WIT App Module
         run: |
           cd project
+          # Compile standalone main engine for wit
           clang -O2 -arch arm64 -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
             -miphoneos-version-min=15.0 -D_FILE_OFFSET_BITS=64 -D__OpenBSD__ \
-            ./src/*.o ./src/libwbfs/*.o ./dclib/*.o \
+            -I. -I./src -I./src/libwbfs -I./dclib \
+            -I$(brew --prefix openssl)/include \
+            -c ./src/wit.c -o ./src/wit.o
+          
+          # Link and generate wit executable
+          clang -O2 -arch arm64 -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
+            -miphoneos-version-min=15.0 -D_FILE_OFFSET_BITS=64 -D__OpenBSD__ \
+            ./src/wit.o ./src/*.o ./src/libwbfs/*.o ./dclib/*.o \
             -L$(brew --prefix openssl)/lib -lz -lcrypto -llzma -lbz2 \
             -o wit
 
-      - name: Pseudo-Sign Binary for Jailbreak
+      - name: Build WWT App Module
+        run: |
+          cd project
+          # Compile standalone main engine for wwt
+          clang -O2 -arch arm64 -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
+            -miphoneos-version-min=15.0 -D_FILE_OFFSET_BITS=64 -D__OpenBSD__ \
+            -I. -I./src -I./src/libwbfs -I./dclib \
+            -I$(brew --prefix openssl)/include \
+            -c ./src/wwt.c -o ./src/wwt.o
+          
+          # Link and generate wwt executable
+          clang -O2 -arch arm64 -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
+            -miphoneos-version-min=15.0 -D_FILE_OFFSET_BITS=64 -D__OpenBSD__ \
+            ./src/wwt.o ./src/*.o ./src/libwbfs/*.o ./dclib/*.o \
+            -L$(brew --prefix openssl)/lib -lz -lcrypto -llzma -lbz2 \
+            -o wwt
+
+      - name: Pseudo-Sign Binaries for Jailbreak
         run: |
           cd project
           ldid -S wit
+          ldid -S wwt
+          mkdir -p ios_binaries
+          mv wit wwt ./ios_binaries/
 
       - name: Upload Finished Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: wit-ios-arm64
-          path: project/wit
+          name: wiimms-tools-ios-arm64
+          path: project/ios_binaries/
