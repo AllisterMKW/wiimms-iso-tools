@@ -21,6 +21,11 @@ jobs:
           echo '#define REVISION "0"' >> version.h
           echo '#define REVISION_STR "0"' >> version.h
 
+      - name: Patch iOS Header Conflict
+        run: |
+          # Use sed to strip out the desktop-only sys/disk.h include file block
+          sed -i '' 's|#include <sys/disk.h>|// Removed sys/disk.h for iOS compilation|g' src/lib-file.c
+
       - name: Pre-Compile Shared Object Files
         run: |
           cd project
