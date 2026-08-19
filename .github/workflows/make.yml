@@ -23,8 +23,8 @@ jobs:
 
       - name: Patch iOS Header Conflict
         run: |
-          # Use sed to strip out the desktop-only sys/disk.h include file block
-          sed -i '' 's|#include <sys/disk.h>|// Removed sys/disk.h for iOS compilation|g' src/lib-file.c
+          # Use sed to strip out the desktop-only sys/disk.h include file block using correct path
+          sed -i '' 's|#include <sys/disk.h>|// Removed sys/disk.h for iOS compilation|g' project/src/lib-file.c
 
       - name: Pre-Compile Shared Object Files
         run: |
